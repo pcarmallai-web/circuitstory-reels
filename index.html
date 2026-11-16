@@ -774,36 +774,32 @@ async function fillCamSel(tr){const sel=$("camSel"),cams=await listCams();const 
   $("camBtn").hidden=cams.length<2}
 function camFail(msg,detail){$("camErr").hidden=false;$("camErr").innerHTML="";const p=document.createElement("p");p.textContent=msg;const b=document.createElement("button");b.className="btn primary";b.textContent="카메라 다시 연결";b.onclick=()=>startCam();const s=document.createElement("p");s.className="hint";s.textContent="계속 안 되면 오른쪽 위 '오류 기록'을 복사해 보내 주세요.";$("camErr").append(p,b,s);logErr("카메라",detail||msg)}
 async function startCam(){
+  // 팀장님 초기 버전(netlify)과 같은 방식: 세로 9:16 영상을 먼저 요청하고, 가로로 오면 다른 조합을 시도.
+  // 화면 비율을 강제로 맞추거나(잘림) 렌즈를 바꾸는 처리는 하지 않음 → 아이폰에서 확대돼 보이던 문제 방지
   clearTimeout(camWatch);$("camErr").hidden=true;
   try{
     if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){camFail("이 브라우저에서는 카메라를 쓸 수 없어요. 크롬이나 사파리로 열어 주세요.","getUserMedia 없음 (https 아님 또는 인앱 브라우저)");return}
+    const portrait=innerHeight>=innerWidth;
+    const tries=[{width:{ideal:1080},height:{ideal:1920}},{width:{ideal:1920},height:{ideal:1080}},{}];
     const audio={echoCancellation:true,noiseSuppression:true};
-    const portrait=innerHeight>=innerWidth,wideCam=!!editState.wide,size=wideCam?(portrait?{width:{ideal:1440},height:{ideal:1920},aspectRatio:{ideal:3/4},resizeMode:"none"}:{width:{ideal:1920},height:{ideal:1440},aspectRatio:{ideal:4/3},resizeMode:"none"}):(portrait?{width:{ideal:1080},height:{ideal:1920}}:{width:{ideal:1920},height:{ideal:1080}});
-    // 광각: 9:16로 잘린 화면 대신 센서 전체(4:3)를 받아서 좌우를 더 넓게 담음 (아이폰 15 프로 기준 좌우 약 33% 넓어짐)
-    const pick=()=>camId?{deviceId:{exact:camId}}:{facingMode:facing};
-    try{stream=await navigator.mediaDevices.getUserMedia({video:{...pick(),...size},audio})}
-    catch(e1){logErr("카메라 1차",e1.name+": "+e1.message);if(camId){camId="";try{localStorage.removeItem("rp_cam")}catch(e){}}stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio})}
-    let tr=stream.getVideoTracks()[0];
-    // 가상 카메라(휴대폰 연결·OBS 등)가 기본으로 잡히면 실제 카메라로 바꿈 — 직접 고른 경우는 그대로
-    if(!camId&&VIRTUAL_CAM.test(tr.label||"")){
-      const real=(await listCams()).find(c=>!VIRTUAL_CAM.test(c.label));
-      if(real){stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:real.deviceId},...size},audio});tr=stream.getVideoTracks()[0];toast("가상 카메라 대신 '"+real.label.replace(/\s*\(.*\)$/,"")+"'를 켰어요")}
+    const base=camId?{deviceId:{exact:camId}}:{facingMode:facing};
+    for(const c of tries){
+      const last=c===tries[tries.length-1];let s;
+      try{s=await navigator.mediaDevices.getUserMedia({video:{...base,...c},audio})}
+      catch(e){logErr("카메라 시도",e.name+": "+e.message);if(camId&&last){camId="";try{localStorage.removeItem("rp_cam")}catch(_){}s=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio})}else if(last)throw e;else continue}
+      const st=s.getVideoTracks()[0].getSettings?s.getVideoTracks()[0].getSettings():{};
+      if(!portrait||!st.width||!st.height||st.height>=st.width||last){stream=s;break}
+      s.getTracks().forEach(t=>t.stop());
     }
-    if(!camId&&facing!=="user"){const cs=await listCams(),uw=cs.find(c=>/ultra ?wide|초광각/i.test(c.label))||cs.find(c=>/triple|트리플|dual wide|듀얼 광각/i.test(c.label));
-      if(uw&&uw.deviceId!==(tr.getSettings?tr.getSettings().deviceId:"")){try{const s2=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:uw.deviceId},...size},audio});stream.getTracks().forEach(t=>t.stop());stream=s2;tr=stream.getVideoTracks()[0];toast("넓게 찍히도록 초광각 카메라를 켰어요")}catch(e){logErr("초광각",e)}}}
-    fillCamSel(tr);
-    let st=tr.getSettings?tr.getSettings():{};
-    try{logErr("카메라 정보",`${tr.label} · ${st.width}x${st.height} · zoom ${st.zoom??"-"}`)}catch(e){}
-    if(!wideCam&&innerHeight>=innerWidth&&st.width>st.height){try{await tr.applyConstraints({width:{ideal:1080},height:{ideal:1920},aspectRatio:{ideal:9/16}});st=tr.getSettings()}catch(e){}}
+    const tr=stream.getVideoTracks()[0];fillCamSel(tr);
+    const st=tr.getSettings?tr.getSettings():{};
+    try{logErr("카메라 정보",`${tr.label} · ${st.width}x${st.height}`)}catch(e){}
     try{const c=tr.getCapabilities&&tr.getCapabilities();if(c&&c.zoom)await tr.applyConstraints({advanced:[{zoom:c.zoom.min}]})}catch(e){}
-    anl=null;const v=$("cam");v.muted=true;v.playsInline=true;v.srcObject=stream;v.classList.toggle("rear",facing!=="user");
+    anl=null;const v=$("cam");v.muted=true;v.playsInline=true;v.srcObject=stream;v.classList.toggle("rear",facing!=="user");v.classList.remove("hid");
     try{await v.play()}catch(e){logErr("카메라 재생",e)}
     tr.onended=()=>camFail("카메라 연결이 끊겼어요. 다른 앱이 카메라를 쓰고 있지 않은지 확인해 주세요.","track ended");
-    camWatch=setTimeout(()=>{if(!v.videoWidth){camFail("카메라 화면이 들어오지 않아요.",`videoWidth 0 · track ${tr.readyState} muted=${tr.muted} · ${tr.label} · settings ${JSON.stringify(st)}`);return}
-      // 화면이 거의 까맣면(렌즈 덮개·어두운 곳) 알려 줌
-      try{const c=document.createElement("canvas");c.width=32;c.height=18;const g=c.getContext("2d");g.drawImage(v,0,0,32,18);const d=g.getImageData(0,0,32,18).data;let s=0;for(let i=0;i<d.length;i+=4)s+=(d[i]+d[i+1]+d[i+2])/3;
-        if(s/(d.length/4)<12)toast("화면이 거의 까매요. 노트북 카메라 덮개(슬라이드)나 카메라 끄기 키를 확인해 주세요")}catch(e){}},3000);
+    camWatch=setTimeout(()=>{if(!v.videoWidth)camFail("카메라 화면이 들어오지 않아요.",`videoWidth 0 · ${tr.label}`)},3000);
     if(mode==="voice")startVoice();
   }catch(e){
     const why={NotAllowedError:"카메라·마이크 권한이 꺼져 있어요. 주소창 왼쪽 자물쇠 → 권한에서 허용해 주세요.",NotReadableError:"다른 앱이 카메라를 쓰고 있어요. 카메라 앱·영상통화를 닫고 다시 연결해 주세요.",NotFoundError:"카메라나 마이크를 찾지 못했어요.",OverconstrainedError:"이 카메라에서 지원하지 않는 설정이에요."}[e.name]||"카메라를 켜지 못했어요.";
@@ -836,6 +832,7 @@ function showScene(){
 function go(d){const n=idx+d;if(n<0||n>=script.scenes.length){if(n>=script.scenes.length&&rec)stopRec();return}idx=n;showScene()}
 let fx;const fxSrc=document.createElement("canvas");fxSrc.width=540;fxSrc.height=960;const fxCtx=fxSrc.getContext("2d");
 function fxFrame(t){
+  return; // 간단 모드: 카메라 영상을 그대로 보여 줌(캔버스 재가공 없음)
   const v=$("cam");if(!v.videoWidth||v.readyState<2)return;
   if(fx===undefined){try{fx=makeGrader(540,960)}catch(e){fx=null}const el=fx?fx.canvas:fxSrc;el.id="camFx";$("stage").insertBefore(el,$("centerMark"))}
   const el=fx?fx.canvas:fxSrc;el.classList.toggle("rear",facing!=="user");
