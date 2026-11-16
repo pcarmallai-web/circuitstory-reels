@@ -2,6 +2,10 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<script>
+// 카카오톡 인앱 브라우저로 열면 외부 브라우저(사파리·크롬)로 자동 전환 — 인앱에서는 카메라 화각이 좁거나 막히는 경우가 많음
+(function(){try{if(/kakaotalk/i.test(navigator.userAgent))location.href="kakaotalk://web/openExternal?url="+encodeURIComponent(location.href)}catch(e){}})();
+</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f1419">
 <meta name="apple-mobile-web-app-capable" content="yes">
