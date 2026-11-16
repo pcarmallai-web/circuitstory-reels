@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>카메라 화각 테스트</title>
+<style>
+body{margin:0;background:#111;color:#eee;font:15px -apple-system,sans-serif}
+.box{position:relative;width:min(100vw,calc(70dvh*9/16));aspect-ratio:9/16;margin:0 auto;overflow:hidden;background:#000}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.btns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px}
+button{padding:12px 4px;border:0;border-radius:10px;background:#333;color:#fff;font-size:15px;font-weight:700}
+button.on{background:#ffd23f;color:#111}
+#info{padding:6px 12px;font-size:13px;white-space:pre-wrap;color:#ccc}
+</style></head><body>
+<div class="btns"><button data-k="1">1번</button><button data-k="2">2번</button><button data-k="3">3번</button><button data-k="4">4번</button><button data-k="5">5번</button><button data-k="6">6번</button><button data-k="7">7번</button><button data-k="8">8번</button></div>
+<div class="box"><video id="v" autoplay playsinline muted></video></div>
+<div id="info">번호를 눌러 보세요. 얼굴이 가장 작게(넓게) 보이는 번호를 알려 주세요.</div>
+<script>
+const V={
+ "1":{name:"아무 설정 없음",c:{facingMode:"user"},zoom:null},
+ "2":{name:"현재 앱 (세로 1080x1920 + 줌 최소)",c:{facingMode:"user",width:{ideal:1080},height:{ideal:1920}},zoom:"min"},
+ "3":{name:"세로 1080x1920, 줌 안 건드림",c:{facingMode:"user",width:{ideal:1080},height:{ideal:1920}},zoom:null},
+ "4":{name:"가로 1920x1080, 줌 안 건드림",c:{facingMode:"user",width:{ideal:1920},height:{ideal:1080}},zoom:null},
+ "5":{name:"4:3 (1440x1920), 줌 안 건드림",c:{facingMode:"user",width:{ideal:1440},height:{ideal:1920}},zoom:null},
+ "6":{name:"작은 해상도 640x480",c:{facingMode:"user",width:{ideal:640},height:{ideal:480}},zoom:null},
+ "7":{name:"줌 1로 고정",c:{facingMode:"user",width:{ideal:1080},height:{ideal:1920}},zoom:1},
+ "8":{name:"줌 최대값 쪽 반대(최소의 절반 시도)",c:{facingMode:"user"},zoom:"half"}
+};
+let st=null;
+async function run(k){
+  document.querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
+  if(st)st.getTracks().forEach(t=>t.stop());st=null;
+  const info=document.getElementById("info");info.textContent="여는 중…";
+  try{
+    st=await navigator.mediaDevices.getUserMedia({video:V[k].c,audio:false});
+    const tr=st.getVideoTracks()[0];
+    const cap=tr.getCapabilities?tr.getCapabilities():{};
+    if(V[k].zoom!==null&&cap.zoom){
+      const z=V[k].zoom==="min"?cap.zoom.min:V[k].zoom==="half"?cap.zoom.min/2:V[k].zoom;
+      try{await tr.applyConstraints({advanced:[{zoom:z}]})}catch(e){}
+    }
+    const v=document.getElementById("v");v.srcObject=st;await v.play().catch(()=>{});
+    await new Promise(r=>setTimeout(r,600));
+    const s=tr.getSettings();
+    info.textContent=`${k}번: ${V[k].name}\n받은 영상: ${s.width}x${s.height} (화면 ${v.videoWidth}x${v.videoHeight})\n줌: 현재 ${s.zoom??"-"} / 가능 ${cap.zoom?cap.zoom.min+"~"+cap.zoom.max:"없음"}\n카메라: ${tr.label}`;
+  }catch(e){info.textContent=k+"번 실패: "+e.name+" "+e.message}
+}
+document.querySelectorAll("button").forEach(b=>b.onclick=()=>run(b.dataset.k));
+</script>
+</body></html>
