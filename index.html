@@ -225,6 +225,9 @@ textarea{resize:vertical;min-height:84px}
 /* 간단 모드: 편집 기능 숨김 — 대본·카메라·녹화·원본 저장만 */
 #editPanel,#editProg,#editRun,#pvFromReview,#ttBtn,#wideBtn,#retBtn,#szBtn,#camZoom,#camZoomV,.camZoomHint{display:none!important}
 #review .bar{grid-template-columns:repeat(3,1fr)}
+/* 기본 카메라 모드: 영상 비율 그대로, 자르지 않음 */
+#cam{object-fit:contain}
+#review video.raw916{aspect-ratio:auto;object-fit:contain}
 </style>
 </head>
 <body>
@@ -365,8 +368,8 @@ textarea{resize:vertical;min-height:84px}
 <section id="shoot" hidden>
   <div class="stage" id="stage">
     <video id="cam" autoplay playsinline muted></video>
-    <svg id="centerMark" viewBox="0 0 1080 1920" preserveAspectRatio="none"></svg>
-    <svg id="guide" class="guideSvg" viewBox="0 0 1080 1920" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
+    <svg id="centerMark" viewBox="0 0 1080 1920" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg id="guide" class="guideSvg" viewBox="0 0 1080 1920" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
     <div class="szLayer" id="szShoot"></div>
   </div>
   <div class="camerr" id="camErr" hidden></div>
@@ -777,30 +780,23 @@ async function fillCamSel(tr){const sel=$("camSel"),cams=await listCams();const 
   sel.innerHTML=cams.map((c,i)=>`<option value="${c.deviceId}"${c.deviceId===cur?" selected":""}>${esc((c.label||("카메라 "+(i+1))).replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i,""))}${VIRTUAL_CAM.test(c.label)?" (가상)":""}</option>`).join("");
   $("camBtn").hidden=cams.length<2}
 function camFail(msg,detail){$("camErr").hidden=false;$("camErr").innerHTML="";const p=document.createElement("p");p.textContent=msg;const b=document.createElement("button");b.className="btn primary";b.textContent="카메라 다시 연결";b.onclick=()=>startCam();const s=document.createElement("p");s.className="hint";s.textContent="계속 안 되면 오른쪽 위 '오류 기록'을 복사해 보내 주세요.";$("camErr").append(p,b,s);logErr("카메라",detail||msg)}
+function fitStage(){const v=$("cam"),st=$("stage");if(!v.videoWidth)return;const ar=v.videoWidth/v.videoHeight;
+  st.style.aspectRatio=v.videoWidth+"/"+v.videoHeight;st.style.width=`min(100vw, calc((100dvh - env(safe-area-inset-top,0px)) * ${ar}))`;st.style.height="auto"}
+addEventListener("resize",()=>{try{fitStage()}catch(e){}});
 async function startCam(){
-  // 팀장님 초기 버전(netlify)과 같은 방식: 세로 9:16 영상을 먼저 요청하고, 가로로 오면 다른 조합을 시도.
-  // 화면 비율을 강제로 맞추거나(잘림) 렌즈를 바꾸는 처리는 하지 않음 → 아이폰에서 확대돼 보이던 문제 방지
   clearTimeout(camWatch);$("camErr").hidden=true;
   try{
     if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){camFail("이 브라우저에서는 카메라를 쓸 수 없어요. 크롬이나 사파리로 열어 주세요.","getUserMedia 없음 (https 아님 또는 인앱 브라우저)");return}
-    const portrait=innerHeight>=innerWidth;
-    const tries=[{width:{ideal:1080},height:{ideal:1920}},{width:{ideal:1920},height:{ideal:1080}},{}];
+    // 기본 카메라 셀카처럼: 카메라를 딱 한 번만 열고(여러 번 열면 아이폰 사파리가 화면을 잘라 확대하는 버그), 9:16로 자르지 않고 받은 그대로 보여 줌
     const audio={echoCancellation:true,noiseSuppression:true};
     const base=camId?{deviceId:{exact:camId}}:{facingMode:facing};
-    for(const c of tries){
-      const last=c===tries[tries.length-1];let s;
-      try{s=await navigator.mediaDevices.getUserMedia({video:{...base,...c},audio})}
-      catch(e){logErr("카메라 시도",e.name+": "+e.message);if(camId&&last){camId="";try{localStorage.removeItem("rp_cam")}catch(_){}s=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio})}else if(last)throw e;else continue}
-      const st=s.getVideoTracks()[0].getSettings?s.getVideoTracks()[0].getSettings():{};
-      if(!portrait||!st.width||!st.height||st.height>=st.width||last){stream=s;break}
-      s.getTracks().forEach(t=>t.stop());
-    }
+    try{stream=await navigator.mediaDevices.getUserMedia({video:{...base,width:{ideal:1920},height:{ideal:1440}},audio})}
+    catch(e){logErr("카메라 시도",e.name+": "+e.message);if(camId){camId="";try{localStorage.removeItem("rp_cam")}catch(_){}}stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio})}
     const tr=stream.getVideoTracks()[0];fillCamSel(tr);
     const st=tr.getSettings?tr.getSettings():{};
     try{logErr("카메라 정보",`${tr.label} · ${st.width}x${st.height}`)}catch(e){}
-    try{const c=tr.getCapabilities&&tr.getCapabilities();if(c&&c.zoom)await tr.applyConstraints({advanced:[{zoom:c.zoom.min}]})}catch(e){}
-    anl=null;const v=$("cam");v.muted=true;v.playsInline=true;v.srcObject=stream;v.classList.toggle("rear",facing!=="user");v.classList.remove("hid");
+    anl=null;const v=$("cam");v.onloadedmetadata=v.onresize=fitStage;v.muted=true;v.playsInline=true;v.srcObject=stream;v.classList.toggle("rear",facing!=="user");v.classList.remove("hid");
     try{await v.play()}catch(e){logErr("카메라 재생",e)}
     tr.onended=()=>camFail("카메라 연결이 끊겼어요. 다른 앱이 카메라를 쓰고 있지 않은지 확인해 주세요.","track ended");
     camWatch=setTimeout(()=>{if(!v.videoWidth)camFail("카메라 화면이 들어오지 않아요.",`videoWidth 0 · ${tr.label}`)},3000);
