@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1419">
+<title>서킷스토리 릴스 자동 편집</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700;900&family=Poppins:wght@700&display=swap">
+<script>
+// 카카오톡 인앱 브라우저면 사파리·크롬으로 넘김
+(function(){try{if(/kakaotalk/i.test(navigator.userAgent))location.href="kakaotalk://web/openExternal?url="+encodeURIComponent(location.href)}catch(e){}})();
+</script>
+<style>
+:root{--bg:#0f1419;--panel:#1a1f27;--line:#2a313c;--chalk:#f6f7f9;--dim:#9aa3af;--flag:#ffcc29;--red:#ff5c5c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--chalk);font-family:"Noto Sans KR",-apple-system,sans-serif;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(32px + env(safe-area-inset-bottom,0px))}
+.wrap{max-width:560px;margin:0 auto}
+h1{font-size:24px;font-weight:900;margin:4px 0 2px}
+.sub{color:var(--dim);font-size:13px;margin:0 0 18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:16px;font:900 17px "Noto Sans KR",sans-serif;cursor:pointer;text-align:center;text-decoration:none}
+.btn.primary{background:var(--flag);color:#111}
+.btn.ghost{background:#252b35;color:var(--chalk);font-weight:700}
+.btn:disabled{opacity:.45}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+label.f{display:block;font-size:13px;color:var(--dim);margin-bottom:6px}
+input[type=text],input[type=password],textarea{width:100%;background:#0f1419;border:1px solid var(--line);border-radius:10px;color:var(--chalk);font:500 16px "Noto Sans KR",sans-serif;padding:10px 12px}
+textarea{resize:vertical;min-height:44px}
+.hint{font-size:12.5px;color:var(--dim);margin:8px 0 0;line-height:1.5}
+#prog{display:none}
+.bar{height:8px;background:#252b35;border-radius:99px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;width:0;background:var(--flag);transition:width .2s}
+#stepTxt{font-weight:700}
+#out video{width:100%;max-height:70vh;background:#000;border-radius:12px;display:block}
+.cap{display:grid;grid-template-columns:52px 1fr;gap:8px;align-items:start;padding:10px 0;border-top:1px solid var(--line)}
+.cap:first-of-type{border-top:0}
+.cap .t{font:700 12px/1.3 Poppins,monospace;color:var(--flag);padding-top:12px}
+.cap .hl{margin-top:6px;font-size:14px;padding:7px 10px}
+.err{color:var(--red);font-size:14px;margin-top:8px;white-space:pre-wrap}
+a.back{color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./">← 릴스 프롬프터로</a>
+  <h1>릴스 자동 편집</h1>
+  <p class="sub">영상을 넣으면 1.25배속 · 말 없는 구간 자르기 · 상단 제목 · 하단 자막을 자동으로 넣어요.</p>
+
+  <div class="card" id="keyCard" hidden>
+    <label class="f">OpenAI API 키 (자막 받아쓰기에 필요, 이 기기에만 저장)</label>
+    <input type="password" id="key" placeholder="sk-..." autocomplete="off">
+    <p class="hint">릴스 프롬프터에 이미 넣었다면 같은 키가 자동으로 쓰여요.</p>
+  </div>
+
+  <div class="card" id="pick">
+    <label class="btn primary" for="file">영상 선택하기</label>
+    <input type="file" id="file" accept="video/*" hidden>
+    <p class="hint">프롬프터에서 저장한 원본 영상을 고르세요. 편집하는 동안 화면을 켜 두세요. (영상 길이 정도 걸려요)</p>
+  </div>
+
+  <div class="card" id="prog">
+    <div id="stepTxt">준비 중…</div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="out" hidden>
+    <div class="card">
+      <video id="result" controls playsinline></video>
+      <div class="row2">
+        <a class="btn primary" id="save" download>저장</a>
+        <button class="btn ghost" id="share">공유 · 사진에 저장</button>
+      </div>
+    </div>
+    <div class="card">
+      <label class="f">상단 제목</label>
+      <input type="text" id="title" maxlength="30">
+      <p class="hint">자막 문장과 노랗게 강조할 단어(한 줄에 하나)를 고칠 수 있어요. 비워 두면 강조 없음.</p>
+      <div id="caps" style="margin-top:8px"></div>
+      <button class="btn primary" id="rerender" style="margin-top:12px">수정한 내용으로 다시 만들기</button>
+      <label class="btn ghost" for="file" style="margin-top:8px">다른 영상 고르기</label>
+    </div>
+  </div>
+</div>
+
+<video id="src" playsinline preload="auto" style="position:fixed;left:-9999px;top:0;width:2px;height:2px"></video>
+
+<script>
+const $=id=>document.getElementById(id);
+const W=1080,H=1920,SPEED=1.25;
+const C={white:"#F6F7F9",yellow:"#FFCC29",panel:"rgba(18,20,25,0.88)"};
+
+/* ── 키 ── */
+function getKey(){try{return localStorage.getItem("rp_oai_key")||""}catch(e){return""}}
+function getModel(){try{return localStorage.getItem("rp_oai_model")||"gpt-6.1-sol"}catch(e){return"gpt-6.1-sol"}}
+$("keyCard").hidden=!!getKey();
+$("key").onchange=()=>{try{localStorage.setItem("rp_oai_key",$("key").value.trim())}catch(e){}};
+
+/* ── 진행 표시 ── */
+function step(t,p){$("prog").style.display="block";$("stepTxt").textContent=t;if(p!=null)$("barFill").style.width=Math.round(p*100)+"%"}
+function fail(msg){$("err").textContent=msg;$("stepTxt").textContent="문제가 생겼어요";$("pick").hidden=false}
+
+/* ── 상태 ── */
+let file=null,keep=[],lines=[],title="",actx=null,srcNode=null,dest=null,outUrl=null,outBlob=null,outName="";
+
+$("file").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return;
+  if(!getKey()&&!$("key").value.trim()){$("keyCard").hidden=false;alertBox("먼저 OpenAI API 키를 넣어 주세요");return}
+  if($("key").value.trim()){try{localStorage.setItem("rp_oai_key",$("key").value.trim())}catch(_){}}
+  file=f;ensureAudio();
+  $("out").hidden=true;$("pick").hidden=true;$("err").textContent="";
+  try{await analyze();await render()}catch(err){console.error(err);fail(err.message||String(err))}
+};
+function alertBox(m){$("prog").style.display="block";$("stepTxt").textContent=m;$("barFill").style.width="0"}
+
+function ensureAudio(){ // 버튼을 누른 순간에 오디오를 깨워 둠 (아이폰 필수)
+  if(!actx){actx=new (window.AudioContext||window.webkitAudioContext)()}
+  actx.resume();
+}
+
+/* ── 1. 분석: 소리 → 말 구간, 받아쓰기, 제목·강조 ── */
+async function analyze(){
+  step("소리 분석 중…",.03);
+  const vid=$("src");if(vid.src)URL.revokeObjectURL(vid.src);
+  vid.src=URL.createObjectURL(file);
+  await new Promise((ok,no)=>{vid.onloadedmetadata=ok;vid.onerror=()=>no(new Error("이 영상 파일을 열 수 없어요"))});
+  const dur=vid.duration;
+  // 소리 디코드 → 16kHz 모노
+  let pcm;
+  try{
+    const ab=await file.arrayBuffer();
+    const buf=await actx.decodeAudioData(ab);
+    const off=new OfflineAudioContext(1,Math.ceil(buf.duration*16000),16000);
+    const s=off.createBufferSource();s.buffer=buf;s.connect(off.destination);s.start();
+    pcm=(await off.startRendering()).getChannelData(0);
+  }catch(e){throw new Error("영상에서 소리를 읽지 못했어요 ("+e.message+")")}
+  // 말 구간 찾기 (조용한 구간 자르기)
+  keep=findSpeech(pcm,16000,dur);
+  step("자막 받아쓰는 중… (AI)",.12);
+  const tr=await transcribe(wav16(pcm));
+  lines=makeLines(tr,keep);
+  step("제목 만드는 중… (AI)",.2);
+  const ai=await titleAndHighlights(lines);
+  title=ai.title||"";
+  lines.forEach((l,i)=>{const a=ai.lines&&ai.lines[i];if(a){if(a.text)l.text=a.text;l.hl=a.hl||""}else l.hl=""});
+  fillEditor();
+}
+
+function findSpeech(x,sr,dur){
+  const hop=Math.round(sr*.02),n=Math.floor(x.length/hop),db=new Float32Array(n);
+  for(let i=0;i<n;i++){let s=0;for(let j=i*hop;j<(i+1)*hop;j++)s+=x[j]*x[j];db[i]=10*Math.log10(s/hop+1e-10)}
+  const sorted=[...db].sort((a,b)=>a-b),floor=sorted[Math.floor(n*.1)],peak=sorted[Math.floor(n*.98)];
+  const thr=Math.max(floor+10,Math.min(peak-28,-48));
+  let on=[...db].map(v=>v>thr);
+  // 0.35초보다 짧은 쉼은 이어 붙이고, 0.12초보다 짧은 소리는 무시
+  const fill=Math.round(.35/.02),blip=Math.round(.12/.02);
+  for(let i=0;i<n;){if(!on[i]){let j=i;while(j<n&&!on[j])j++;if(i>0&&j<n&&j-i<fill)for(let k=i;k<j;k++)on[k]=true;i=j}else i++}
+  const seg=[];for(let i=0;i<n;){if(on[i]){let j=i;while(j<n&&on[j])j++;if(j-i>=blip)seg.push([i*.02,j*.02]);i=j}else i++}
+  // 앞 0.12초, 뒤 0.2초 여유 + 겹치면 합치기
+  const out=[];for(const [a,b] of seg){const s=Math.max(0,a-.12),e=Math.min(dur,b+.2);if(out.length&&s<=out[out.length-1][1]+.05)out[out.length-1][1]=e;else out.push([s,e])}
+  return out.length?out:[[0,dur]];
+}
+
+function wav16(pcm){
+  const b=new ArrayBuffer(44+pcm.length*2),v=new DataView(b);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  w(0,"RIFF");v.setUint32(4,36+pcm.length*2,true);w(8,"WAVE");w(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,16000,true);v.setUint32(28,32000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,"data");v.setUint32(40,pcm.length*2,true);
+  for(let i=0;i<pcm.length;i++){const s=Math.max(-1,Math.min(1,pcm[i]));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7fff,true)}
+  return new Blob([b],{type:"audio/wav"});
+}
+
+async function transcribe(wav){
+  const key=getKey();
+  async function call(model,withWords){
+    const fd=new FormData();fd.append("file",wav,"audio.wav");fd.append("model",model);fd.append("language","ko");
+    if(withWords){fd.append("response_format","verbose_json");fd.append("timestamp_granularities[]","word");fd.append("timestamp_granularities[]","segment")}
+    else fd.append("response_format","json");
+    const r=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{authorization:"Bearer "+key},body:fd});
+    if(r.status===401)throw new Error("OpenAI API 키가 맞지 않아요");
+    if(r.status===429)throw new Error("OpenAI 사용 한도 또는 잔액이 부족해요");
+    if(!r.ok){let m="";try{m=(await r.json()).error.message}catch(e){}throw Object.assign(new Error(m||("받아쓰기 실패 "+r.status)),{soft:true})}
+    return r.json();
+  }
+  try{return await call("whisper-1",true)}
+  catch(e){if(!e.soft)throw e;
+    try{return await call("gpt-4o-transcribe",false)}catch(e2){if(!e2.soft)throw e2;throw new Error("받아쓰기에 실패했어요: "+e.message)}}
+}
+
+// 받아쓴 단어를 짧은 자막 줄(12자 안팎)로 묶기
+function makeLines(tr,keep){
+  const out=[];const MAX=13;
+  const words=(tr.words||[]).map(w=>({w:String(w.word).trim(),s:w.start,e:w.end})).filter(w=>w.w);
+  if(words.length){
+    let cur=null;
+    for(const w of words){
+      if(!cur)cur={text:w.w,start:w.s,end:w.e};
+      else{const cand=cur.text+" "+w.w;
+        if(cand.replace(/\s/g,"").length>MAX||w.s-cur.end>.6){out.push(cur);cur={text:w.w,start:w.s,end:w.e}}
+        else{cur.text=cand;cur.end=w.e}}
+      if(/[.?!。]$/.test(cur.text)&&cur.text.replace(/\s/g,"").length>=5){out.push(cur);cur=null}
+    }
+    if(cur)out.push(cur);
+  }else{
+    // 시간 정보가 없으면 말 구간 길이에 맞춰 글자 수 비율로 배분
+    const text=(tr.text||"").trim();if(!text)return[];
+    const parts=[];let buf="";for(const t of text.split(/\s+/)){const c=buf?buf+" "+t:t;if(c.replace(/\s/g,"").length>MAX&&buf){parts.push(buf);buf=t}else buf=c;if(/[.?!]$/.test(buf)&&buf.length>=5){parts.push(buf);buf=""}}if(buf)parts.push(buf);
+    const total=keep.reduce((a,[s,e])=>a+e-s,0),chars=parts.reduce((a,p)=>a+p.length,0);
+    let acc=0;const at=x=>{let r=x;for(const [s,e] of keep){if(r<=e-s)return s+r;r-=e-s}return keep[keep.length-1][1]};
+    for(const p of parts){const a=acc/chars*total;acc+=p.length;out.push({text:p,start:at(a),end:at(acc/chars*total)})}
+  }
+  out.forEach(l=>l.text=l.text.replace(/\s+([.,?!])/g,"$1").replace(/[.。]$/,""));
+  return out;
+}
+
+async function titleAndHighlights(lines){
+  const sys="너는 서킷스토리 아카데미(심레이싱·운전 교육) 릴스 편집자다. 반드시 JSON만 출력한다.";
+  const prompt=`아래는 릴스 영상의 자막 줄 목록이다.
+1) 영상 내용을 담은 상단 제목을 15자 이내로, 시청자가 궁금해할 질문형이나 핵심 문구로 만든다.
+2) 각 줄의 받아쓰기 오타·띄어쓰기만 고친다. 내용·말투는 바꾸지 말고, 줄 수와 순서를 그대로 유지한다.
+3) 각 줄에서 노랗게 강조할 핵심 단어를 최대 1개 고른다(그 줄 안에 그대로 있는 단어). 전체 줄의 1/3 정도만 강조하고 나머지는 "".
+출력 형식: {"title":"...","lines":[{"text":"...","hl":"..."}]}
+자막 줄:
+${JSON.stringify(lines.map(l=>l.text),null,0)}`;
+  const key=getKey(),head={"content-type":"application/json",authorization:"Bearer "+key};
+  try{
+    let r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:head,body:JSON.stringify({model:getModel(),messages:[{role:"system",content:sys},{role:"user",content:prompt}],max_completion_tokens:4000})});
+    let t="";
+    if(r.ok){const d=await r.json();t=d.choices?.[0]?.message?.content||""}
+    else{r=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:head,body:JSON.stringify({model:getModel(),instructions:sys,input:prompt,max_output_tokens:4000})});
+      if(r.ok){const d=await r.json();t=d.output_text||(d.output||[]).flatMap(o=>o.content||[]).map(c=>c.text||"").join("")}}
+    const j=JSON.parse(t.slice(t.indexOf("{"),t.lastIndexOf("}")+1));
+    if(j.lines&&j.lines.length!==lines.length)j.lines=null;
+    if(j.lines)j.lines.forEach((l,i)=>{if(l.hl&&!(l.text||lines[i].text).includes(l.hl))l.hl=""});
+    return j;
+  }catch(e){console.warn(e);return{title:"",lines:null}}
+}
+
+/* ── 편집 칸 ── */
+function fmt(t){return (t/SPEED).toFixed(1)+"s"}
+function fillEditor(){
+  $("title").value=title;
+  const box=$("caps");box.innerHTML="";
+  lines.forEach((l,i)=>{
+    const d=document.createElement("div");d.className="cap";
+    d.innerHTML=`<div class="t">${fmt(outTime(l.start))}</div><div><textarea rows="1"></textarea><input type="text" class="hl" placeholder="강조 단어 (선택)"></div>`;
+    const ta=d.querySelector("textarea"),hl=d.querySelector(".hl");
+    ta.value=l.text;hl.value=l.hl||"";
+    ta.oninput=()=>{l.text=ta.value};hl.oninput=()=>{l.hl=hl.value.trim()};
+    box.appendChild(d);
+  });
+}
+$("title").oninput=()=>{title=$("title").value};
+$("rerender").onclick=async()=>{ensureAudio();$("out").hidden=true;$("err").textContent="";try{await render()}catch(e){fail(e.message||String(e))}};
+
+// 원본 시간 → 결과 영상 시간
+function outTime(t){let acc=0;for(const [s,e] of keep){if(t<s)return acc/SPEED;if(t<=e)return (acc+t-s)/SPEED;acc+=e-s}return acc/SPEED}
+
+/* ── 2. 그리기 ── */
+const cv=document.createElement("canvas");cv.width=W;cv.height=H;const g=cv.getContext("2d");
+const blurC=document.createElement("canvas");blurC.width=27;blurC.height=48;const bg=blurC.getContext("2d");
+
+function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+
+function drawVideo(v){
+  const vw=v.videoWidth,vh=v.videoHeight;if(!vw)return;
+  if(vw/vh>W/H*1.02){ // 9:16보다 넓은 영상: 자르지 않고 가로를 꽉 채우고, 위아래는 같은 화면을 흐리게
+    const kb=Math.max(27/vw,48/vh);bg.drawImage(v,(27-vw*kb)/2,(48-vh*kb)/2,vw*kb,vh*kb);
+    g.imageSmoothingEnabled=true;g.drawImage(blurC,0,0,W,H);g.fillStyle="rgba(0,0,0,.35)";g.fillRect(0,0,W,H);
+    const k=W/vw,dh=vh*k;g.drawImage(v,0,(H-dh)/2,W,dh);
+  }else{const k=Math.max(W/vw,H/vh),dw=vw*k,dh=vh*k;g.drawImage(v,(W-dw)/2,(H-dh)/2,dw,dh)}
+}
+
+function wrapTitle(t,maxW){
+  g.font='900 60px "Noto Sans KR"';if(g.measureText(t).width<=maxW)return[t];
+  const ws=t.split(" ");if(ws.length<2)return[t];
+  let best=[t],bd=1e9;for(let i=1;i<ws.length;i++){const a=ws.slice(0,i).join(" "),b=ws.slice(i).join(" ");const d=Math.max(g.measureText(a).width,g.measureText(b).width);if(d<bd){bd=d;best=[a,b]}}return best;
+}
+function drawTitle(){
+  if(!title.trim())return;
+  const ls=wrapTitle(title.trim(),920);
+  g.font='900 60px "Noto Sans KR"';let tw=Math.max(...ls.map(l=>g.measureText(l).width));
+  g.font='700 26px Poppins,"Noto Sans KR"';tw=Math.max(tw,g.measureText("CIRCUIT STORY ACADEMY").width+40);
+  const pw=Math.min(1000,tw+88),ph=60+ls.length*76,x=(W-pw)/2,y=150;
+  g.fillStyle=C.panel;rr(x,y,pw,ph,30);g.fill();
+  g.fillStyle=C.yellow;rr(W/2-30,y+18,60,6,3);g.fill();
+  g.textAlign="center";g.textBaseline="alphabetic";
+  g.fillStyle=C.yellow;g.font='700 26px Poppins,"Noto Sans KR"';
+  if("letterSpacing" in g)g.letterSpacing="3px";g.fillText("CIRCUIT STORY ACADEMY",W/2,y+58);if("letterSpacing" in g)g.letterSpacing="0px";
+  g.fillStyle=C.white;g.font='900 60px "Noto Sans KR"';ls.forEach((l,i)=>g.fillText(l,W/2,y+58+66+i*76));
+}
+
+function curLine(t){
+  for(let i=0;i<lines.length;i++){const l=lines[i],nx=lines[i+1];const end=nx?Math.min(nx.start,l.end+.6):l.end+.6;if(t>=l.start-.05&&t<end)return l}
+  return null;
+}
+function drawCaption(t){
+  const l=curLine(t);if(!l||!l.text.trim())return;
+  const text=l.text.trim(),hl=(l.hl||"").trim();
+  let fs=62;g.font=`900 ${fs}px "Noto Sans KR"`;while(g.measureText(text).width>940&&fs>40){fs-=2;g.font=`900 ${fs}px "Noto Sans KR"`}
+  const tw=g.measureText(text).width,pw=tw+68,ph=fs+42;
+  const p=Math.max(0,Math.min(1,(t-l.start)/(.16*SPEED))),dy=12*(1-p);
+  const cy=1380+dy,x=(W-pw)/2,y=cy-ph/2;
+  g.globalAlpha=p;g.fillStyle="rgba(18,20,25,0.86)";rr(x,y,pw,ph,24);g.fill();
+  g.textAlign="left";g.textBaseline="middle";
+  let sx=(W-tw)/2;const by=cy+2;
+  const parts=hl&&text.includes(hl)?[[text.slice(0,text.indexOf(hl)),0],[hl,1],[text.slice(text.indexOf(hl)+hl.length),0]]:[[text,0]];
+  for(const [s,on] of parts){if(!s)continue;g.fillStyle=on?C.yellow:C.white;g.fillText(s,sx,by);sx+=g.measureText(s).width}
+  g.globalAlpha=1;
+}
+function drawFrame(v){g.fillStyle="#000";g.fillRect(0,0,W,H);drawVideo(v);drawTitle();drawCaption(v.currentTime)}
+
+/* ── 3. 영상 만들기 (실시간 녹화 방식) ── */
+function pickMime(){for(const m of["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1,mp4a","video/mp4","video/webm;codecs=vp9,opus","video/webm"])if(window.MediaRecorder&&MediaRecorder.isTypeSupported(m))return m;return""}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+async function render(){
+  step("글꼴 준비 중…",.25);
+  try{await Promise.all([document.fonts.load('900 62px "Noto Sans KR"'),document.fonts.load('700 26px Poppins')])}catch(e){}
+  const v=$("src");
+  if(!srcNode){srcNode=actx.createMediaElementSource(v);const comp=actx.createDynamicsCompressor();comp.threshold.value=-22;comp.ratio.value=2.5;comp.attack.value=.008;comp.release.value=.16;
+    const gain=actx.createGain();gain.gain.value=1.3;dest=actx.createMediaStreamDestination();srcNode.connect(comp);comp.connect(gain);gain.connect(dest)}
+  await actx.resume();
+  v.playbackRate=SPEED;v.defaultPlaybackRate=SPEED;v.preservesPitch=true;v.webkitPreservesPitch=true;v.muted=false;
+  const mime=pickMime();if(!mime)throw new Error("이 브라우저는 영상 저장을 지원하지 않아요. 사파리나 크롬 최신 버전으로 열어 주세요.");
+  const stream=new MediaStream([...cv.captureStream(30).getVideoTracks(),...dest.stream.getAudioTracks()]);
+  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:10_000_000,audioBitsPerSecond:192000});
+  const chunks=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  const done=new Promise(r=>rec.onstop=r);
+  try{await navigator.wakeLock?.request("screen")}catch(e){}
+  const total=keep.reduce((a,[s,e])=>a+e-s,0);let doneSec=0,live=true;
+  (function loop(){if(!live)return;drawFrame(v);requestAnimationFrame(loop)})();
+  let started=false;
+  for(const [s,e] of keep){
+    v.pause();v.currentTime=s;
+    await new Promise(r=>{const f=()=>{v.removeEventListener("seeked",f);r()};v.addEventListener("seeked",f);setTimeout(f,1500)});
+    drawFrame(v);await sleep(40);
+    if(!started){rec.start(1000);started=true}else rec.resume();
+    v.playbackRate=SPEED;await v.play();
+    await new Promise(r=>{const chk=()=>{const t=v.currentTime;step("영상 만드는 중… 화면을 켜 두세요",.28+.7*Math.min(1,(doneSec+Math.max(0,t-s))/total));if(t>=e||v.ended)return r();requestAnimationFrame(chk)};chk()});
+    v.pause();rec.pause();doneSec+=e-s;
+  }
+  rec.resume();await sleep(120);rec.stop();await done;live=false;
+  outBlob=new Blob(chunks,{type:mime.split(";")[0]});
+  const ext=mime.includes("mp4")?"mp4":"webm";const d=new Date(),p=n=>String(n).padStart(2,"0");
+  outName=`서킷스토리_편집본_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
+  if(outUrl)URL.revokeObjectURL(outUrl);outUrl=URL.createObjectURL(outBlob);
+  $("result").src=outUrl;$("save").href=outUrl;$("save").download=outName;
+  step("완성됐어요",1);$("out").hidden=false;$("pick").hidden=true;
+  $("out").scrollIntoView({behavior:"smooth"});
+}
+
+$("share").onclick=async()=>{
+  if(!outBlob)return;const f=new File([outBlob],outName,{type:outBlob.type});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f]})}catch(e){}}
+  else $("save").click();
+};
+</script>
+</body>
+</html>
